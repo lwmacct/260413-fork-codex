@@ -450,9 +450,12 @@ impl ChatWidget {
                     Some(format!("{} used", format_tokens_compact(total)))
                 }
             }
-            StatusLineItem::ContextUsage => self
+            StatusLineItem::ContextRemaining => self
+                .status_line_context_remaining_percent()
+                .map(|remaining| format!("Context {remaining}% left")),
+            StatusLineItem::ContextUsed => self
                 .status_line_context_used_percent()
-                .map(format_context_used_meter),
+                .map(|used| format!("Context {used}% used")),
             StatusLineItem::FiveHourLimit => {
                 let window = self
                     .rate_limit_snapshots_by_limit_id
@@ -502,11 +505,41 @@ impl ChatWidget {
         }
     }
 
+    pub(super) fn status_surface_preview_value_for_item(
+        &mut self,
+        item: StatusSurfacePreviewItem,
+    ) -> Option<String> {
+        let status_line_item = match item {
+            StatusSurfacePreviewItem::AppName => return Some("codex".to_string()),
+            StatusSurfacePreviewItem::ProjectName => return self.terminal_title_project_name(),
+            StatusSurfacePreviewItem::ProjectRoot => StatusLineItem::ProjectRoot,
+            StatusSurfacePreviewItem::Status => return Some(self.terminal_title_status_text()),
+            StatusSurfacePreviewItem::TaskProgress => return self.terminal_title_task_progress(),
+            StatusSurfacePreviewItem::CurrentDir => StatusLineItem::CurrentDir,
+            StatusSurfacePreviewItem::ThreadTitle => StatusLineItem::ThreadTitle,
+            StatusSurfacePreviewItem::GitBranch => StatusLineItem::GitBranch,
+            StatusSurfacePreviewItem::ContextRemaining => StatusLineItem::ContextRemaining,
+            StatusSurfacePreviewItem::ContextUsed => StatusLineItem::ContextUsed,
+            StatusSurfacePreviewItem::FiveHourLimit => StatusLineItem::FiveHourLimit,
+            StatusSurfacePreviewItem::WeeklyLimit => StatusLineItem::WeeklyLimit,
+            StatusSurfacePreviewItem::CodexVersion => StatusLineItem::CodexVersion,
+            StatusSurfacePreviewItem::ContextWindowSize => StatusLineItem::ContextWindowSize,
+            StatusSurfacePreviewItem::UsedTokens => StatusLineItem::UsedTokens,
+            StatusSurfacePreviewItem::TotalInputTokens => StatusLineItem::TotalInputTokens,
+            StatusSurfacePreviewItem::TotalOutputTokens => StatusLineItem::TotalOutputTokens,
+            StatusSurfacePreviewItem::SessionId => StatusLineItem::SessionId,
+            StatusSurfacePreviewItem::FastMode => StatusLineItem::FastMode,
+            StatusSurfacePreviewItem::Model => StatusLineItem::ModelName,
+            StatusSurfacePreviewItem::ModelWithReasoning => StatusLineItem::ModelWithReasoning,
+        };
+        self.status_line_value_for_item(&status_line_item)
+    }
+
     /// Resolves one configured terminal-title item into a displayable segment.
     ///
     /// Returning `None` means "omit this segment for now" so callers can keep
     /// the configured order while hiding values that are not yet available.
-    fn terminal_title_value_for_item(
+    pub(super) fn terminal_title_value_for_item(
         &mut self,
         item: TerminalTitleItem,
         now: Instant,
@@ -660,62 +693,4 @@ where
         }
     }
     (items, invalid)
-}
-
-fn format_context_used_meter(used_percent: i64) -> String {
-    const METER_WIDTH: usize = 5;
-    const EIGHTHS_PER_CELL: i64 = 8;
-    const PARTIAL_BLOCKS: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
-
-    let used_percent = used_percent.clamp(0, 100);
-    let total_eighths = (used_percent * METER_WIDTH as i64 * EIGHTHS_PER_CELL + 50) / 100;
-    let filled_cells = (total_eighths / EIGHTHS_PER_CELL) as usize;
-    let partial_eighths = (total_eighths % EIGHTHS_PER_CELL) as usize;
-
-    let mut meter = String::with_capacity(METER_WIDTH);
-    meter.push_str(&"█".repeat(filled_cells));
-    meter.push_str(PARTIAL_BLOCKS[partial_eighths]);
-
-    let occupied_cells = filled_cells + usize::from(partial_eighths > 0);
-    meter.push_str(&" ".repeat(METER_WIDTH.saturating_sub(occupied_cells)));
-
-    format!("Context [{meter}]")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::format_context_used_meter;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn context_meter_uses_five_cells_with_partial_blocks() {
-        assert_eq!(
-            format_context_used_meter(/*used_percent*/ 100),
-            "Context [█████]"
-        );
-        assert_eq!(
-            format_context_used_meter(/*used_percent*/ 50),
-            "Context [██▌  ]"
-        );
-        assert_eq!(
-            format_context_used_meter(/*used_percent*/ 10),
-            "Context [▌    ]"
-        );
-        assert_eq!(
-            format_context_used_meter(/*used_percent*/ 0),
-            "Context [     ]"
-        );
-    }
-
-    #[test]
-    fn context_meter_clamps_out_of_range_values() {
-        assert_eq!(
-            format_context_used_meter(/*used_percent*/ 125),
-            "Context [█████]"
-        );
-        assert_eq!(
-            format_context_used_meter(/*used_percent*/ -1),
-            "Context [     ]"
-        );
-    }
 }
